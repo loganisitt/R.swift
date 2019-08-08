@@ -11,8 +11,13 @@ import Foundation
 import XcodeEdit
 
 public struct RswiftCore {
+    private let callInformation: CallInformation
 
-    static public func run(_ callInformation: CallInformation) throws {
+    public init(_ callInformation: CallInformation) {
+        self.callInformation = callInformation
+    }
+
+    public func run() throws {
         do {
             let xcodeproj = try Xcodeproj(url: callInformation.xcodeprojURL)
             let ignoreFile = (try? IgnoreFile(ignoreFileURL: callInformation.rswiftIgnoreURL)) ?? IgnoreFile()
@@ -34,67 +39,19 @@ public struct RswiftCore {
                 ReuseIdentifierStructGenerator(reusables: resources.reusables),
                 ResourceFileStructGenerator(resourceFiles: resources.resourceFiles),
                 StringsStructGenerator(localizableStrings: resources.localizableStrings),
+                AccessibilityIdentifierStructGenerator(nibs: resources.nibs, storyboards: resources.storyboards),
             ]
 
-            let aggregatedResult = AggregatedStructGenerator(subgenerators: generators)
-                .generatedStructs(at: callInformation.accessLevel, prefix: "")
+            // Generate regular R file
+            var fileContents = generateRegularFileContents(resources: resources, generators: generators)
+            writeIfChanged(contents: fileContents, toURL: callInformation.outputURL)
 
-            let (externalStructWithoutProperties, internalStruct) = ValidatedStructGenerator(validationSubject: aggregatedResult)
-                .generatedStructs(at: callInformation.accessLevel, prefix: "")
-
-            let externalStruct = externalStructWithoutProperties.addingInternalProperties(forBundleIdentifier: callInformation.bundleIdentifier)
-
-            let codeConvertibles: [SwiftCodeConverible?] = [
-                HeaderPrinter(),
-                ImportPrinter(
-                    modules: callInformation.imports,
-                    extractFrom: [externalStruct, internalStruct],
-                    exclude: [Module.custom(name: callInformation.productModuleName)]
-                ),
-                externalStruct,
-                internalStruct
-            ]
-
-            let objcConvertibles: [ObjcCodeConvertible] = [
-                ObjcHeaderPrinter(),
-                externalStruct,
-                ObjcFooterPrinter(),
-            ]
-
-            var fileContents = codeConvertibles
-                .compactMap { $0?.swiftCode }
-                .joined(separator: "\n\n")
-                + "\n\n" // Newline at end of file
-
-            if callInformation.objcCompat {
-                fileContents += objcConvertibles.compactMap { $0.objcCode(prefix: "") }.joined(separator: "\n") + "\n"
-            }
-
-            if callInformation.unusedImages {
-                let allImages =
-                    resources.images.map { $0.name } +
-                        resources.assetFolders.flatMap { $0.imageAssets }
-
-                let allUsedImages =
-                    resources.nibs.flatMap { $0.usedImageIdentifiers } +
-                        resources.storyboards.flatMap { $0.usedImageIdentifiers }
-
-                let unusedImages = Set(allImages).subtracting(Set(allUsedImages))
-                let unusedImageGeneratedNames = unusedImages.map { SwiftIdentifier(name: $0).description }.uniqueAndSorted()
-
-                fileContents += "/* Potentially Unused Images\n"
-                fileContents += unusedImageGeneratedNames.joined(separator: "\n")
-                fileContents += "\n*/"
-            }
-
-            // Write file if we have changes
-            let currentFileContents = try? String(contentsOf: callInformation.outputURL, encoding: .utf8)
-            if currentFileContents != fileContents  {
-                do {
-                    try fileContents.write(to: callInformation.outputURL, atomically: true, encoding: .utf8)
-                } catch {
-                    fail(error.localizedDescription)
-                }
+            // Generate UITest R file
+            if let uiTestOutputURL = callInformation.uiTestOutputURL {
+                let uiTestFileContents = generateUITestFileContents(resources: resources, generators: [
+                    AccessibilityIdentifierStructGenerator(nibs: resources.nibs, storyboards: resources.storyboards)
+                    ])
+                writeIfChanged(contents: uiTestFileContents, toURL: uiTestOutputURL)
             }
 
         } catch let error as ResourceParsingError {
@@ -109,5 +66,85 @@ public struct RswiftCore {
 
             exit(EXIT_FAILURE)
         }
+    }
+
+    private func generateRegularFileContents(resources: Resources, generators: [StructGenerator]) -> String {
+        let aggregatedResult = AggregatedStructGenerator(subgenerators: generators)
+            .generatedStructs(at: callInformation.accessLevel, prefix: "")
+
+        let (externalStructWithoutProperties, internalStruct) = ValidatedStructGenerator(validationSubject: aggregatedResult)
+            .generatedStructs(at: callInformation.accessLevel, prefix: "")
+
+        let externalStruct = externalStructWithoutProperties.addingInternalProperties(forBundleIdentifier: callInformation.bundleIdentifier)
+
+        let codeConvertibles: [SwiftCodeConverible?] = [
+            HeaderPrinter(),
+            ImportPrinter(
+                modules: callInformation.imports,
+                extractFrom: [externalStruct, internalStruct],
+                exclude: [Module.custom(name: callInformation.productModuleName)]
+            ),
+            externalStruct,
+            internalStruct
+        ]
+
+        var fileContents = codeConvertibles
+            .compactMap { $0?.swiftCode }
+            .joined(separator: "\n\n")
+            + "\n" // Newline at end of file
+
+        let objcConvertibles: [ObjcCodeConvertible] = [
+            ObjcHeaderPrinter(),
+            externalStruct,
+            ObjcFooterPrinter(),
+        ]
+
+        if callInformation.objcCompat {
+            fileContents += objcConvertibles.compactMap { $0.objcCode(prefix: "") }.joined(separator: "\n") + "\n"
+        }
+
+        if callInformation.unusedImages {
+            let allImages =
+                resources.images.map { $0.name } +
+                    resources.assetFolders.flatMap { $0.imageAssets }
+
+            let allUsedImages =
+                resources.nibs.flatMap { $0.usedImageIdentifiers } +
+                    resources.storyboards.flatMap { $0.usedImageIdentifiers }
+
+            let unusedImages = Set(allImages).subtracting(Set(allUsedImages))
+            let unusedImageGeneratedNames = unusedImages.map { SwiftIdentifier(name: $0).description }.uniqueAndSorted()
+
+            fileContents += "/* Potentially Unused Images\n"
+            fileContents += unusedImageGeneratedNames.joined(separator: "\n")
+            fileContents += "\n*/"
+        }
+
+        return fileContents
+    }
+
+    private func generateUITestFileContents(resources: Resources, generators: [StructGenerator]) -> String {
+        let (externalStruct, _) =  AggregatedStructGenerator(subgenerators: generators)
+            .generatedStructs(at: callInformation.accessLevel, prefix: "")
+
+        let codeConvertibles: [SwiftCodeConverible?] = [
+            HeaderPrinter(),
+            externalStruct
+        ]
+
+        return codeConvertibles
+            .compactMap { $0?.swiftCode }
+            .joined(separator: "\n\n")
+            + "\n" // Newline at end of file
+    }
+}
+
+private func writeIfChanged(contents: String, toURL outputURL: URL) {
+    let currentFileContents = try? String(contentsOf: outputURL, encoding: .utf8)
+    guard currentFileContents != contents else { return }
+    do {
+        try contents.write(to: outputURL, atomically: true, encoding: .utf8)
+    } catch {
+        fail(error.localizedDescription)
     }
 }
