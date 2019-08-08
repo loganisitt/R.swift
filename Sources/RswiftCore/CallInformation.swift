@@ -32,6 +32,8 @@ public struct CallInformation {
   let sourceRootURL: URL
   let sdkRootURL: URL
   let platformURL: URL
+  let objcCompat: Bool
+  let unusedImages: Bool
 
   public init(
     outputURL: URL,
@@ -54,7 +56,9 @@ public struct CallInformation {
     developerDirURL: URL,
     sourceRootURL: URL,
     sdkRootURL: URL,
-    platformURL: URL
+    platformURL: URL,
+    objcCompat: Bool,
+    unusedImages: Bool
   ) {
     self.outputURL = outputURL
     self.uiTestOutputURL = uiTestOutputURL
@@ -77,6 +81,8 @@ public struct CallInformation {
     self.sourceRootURL = sourceRootURL
     self.sdkRootURL = sdkRootURL
     self.platformURL = platformURL
+    self.objcCompat = objcCompat
+    self.unusedImages = unusedImages
   }
 
 

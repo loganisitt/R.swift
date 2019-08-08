@@ -150,7 +150,7 @@ private let blacklistedCharacters: CharacterSet = {
 }()
 
 // Based on https://docs.swift.org/swift-book/ReferenceManual/LexicalStructure.html#ID413
-private let SwiftKeywords = [
+private let SwiftKeywords = Set([
   // Keywords used in declarations
   "associatedtype", "class", "deinit", "enum", "extension", "fileprivate", "func", "import", "init", "inout", "internal", "let", "open", "operator", "private", "protocol", "public", "static", "struct", "subscript", "typealias", "var",
 
@@ -165,5 +165,4 @@ private let SwiftKeywords = [
 
   // Keywords from Swift 2 that are still reserved
   "__COLUMN__", "__FILE__", "__FUNCTION__", "__LINE__",
-]
-
+])

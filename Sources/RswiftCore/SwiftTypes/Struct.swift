@@ -9,7 +9,7 @@
 
 import Foundation
 
-struct Struct: UsedTypesProvider, SwiftCodeConverible {
+struct Struct: UsedTypesProvider, SwiftCodeConverible, ObjcCodeConvertible {
   let availables: [String]
   let comments: [String]
   let accessModifier: AccessLevel
@@ -84,5 +84,29 @@ struct Struct: UsedTypesProvider, SwiftCodeConverible {
     let bodyString = bodyComponents.joined(separator: "\n\n").indent(with: "  ")
 
     return OSPrinter(code: "\(commentsString)\(availablesString)\(accessModifierString)struct \(type)\(implementsString) {\n\(bodyString)\n}", supportedOS: os).swiftCode
+  }
+    
+  func objcCode(prefix: String) -> String {
+    
+    let isInitialStruct = prefix.isEmpty
+    let maybeDot = isInitialStruct ? "" : "."
+    let newPrefix = "\(prefix)\(maybeDot)\(type.name.description)"
+    
+    let functionsString = functions
+        .map { $0.objcCode(prefix: newPrefix) }
+        .sorted()
+        .map { $0.description }
+        .filter { !$0.isEmpty }
+        .joined(separator: "\n")
+    
+    let structsString = structs
+        .map { $0.objcCode(prefix: newPrefix) }
+        .sorted()
+        .map { $0.description }
+        .filter { !$0.isEmpty }
+        .joined(separator: "\n")
+        .indent(with: isInitialStruct ? "  " : "")
+    
+    return functionsString + structsString
   }
 }

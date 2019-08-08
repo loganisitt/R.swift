@@ -36,6 +36,8 @@ extension ProcessInfo {
 // Flags grouped in struct for readability
 struct CommanderFlags {
   static let version = Flag("version", description: "Prints version information about this release.")
+  static let objc = Flag("objc", description: "Generates ObjC compatible definitions in RObjc")
+  static let unusedImages = Flag("unused-images", description: "Appends a list of images that aren't used in xibs or storyboards to check against if they are still used.")
 }
 
 // Default values for non-optional Commander Options
@@ -83,9 +85,13 @@ let generate = command(
   CommanderOptions.accessLevel,
   CommanderOptions.rswiftIgnore,
   CommanderOptions.inputOutputFilesValidation,
+  
+  CommanderFlags.objc,
+  CommanderFlags.unusedImages,
 
   CommanderArguments.outputPath
-) { uiTestOutputPath, importModules, accessLevel, rswiftIgnore, inputOutputFilesValidation, outputPath in
+
+) { uiTestOutputPath, importModules, accessLevel, rswiftIgnore, inputOutputFilesValidation, objc, unusedImages, outputPath in
 
   let processInfo = ProcessInfo()
 
@@ -180,7 +186,9 @@ let generate = command(
     developerDirURL: URL(fileURLWithPath: developerDirPath),
     sourceRootURL: URL(fileURLWithPath: sourceRootPath),
     sdkRootURL: URL(fileURLWithPath: sdkRootPath),
-    platformURL: URL(fileURLWithPath: platformPath)
+    platformURL: URL(fileURLWithPath: platformPath),
+    objcCompat: objc,
+    unusedImages: unusedImages
   )
 
   try RswiftCore(callInformation).run()
